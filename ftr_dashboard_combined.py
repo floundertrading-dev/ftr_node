@@ -11,58 +11,86 @@ st.set_page_config(page_title="NZ FTR Node Price Dashboard", layout="wide")
 st.title("NZ FTR Node Price Dashboard")
 st.markdown("Interactive dashboard for visualizing daily spot prices for FTR nodes")
 
-# Data processing and loading
 @st.cache_data
 def load_and_process_data():
     """
-    Load individual wholesale data files and merge them into a single dataset
+    Dynamically downloads and merges wholesale data for specified nodes
+    from 2015-01-01 to yesterday.
     """
-    # Directory containing the files
-    directory = r"C:\Users\1506043\Downloads"
     
-    # List of data files to process
-    highlighted_files = [
-        "Wholesale_data_for_a_single_node_20251026012058.csv",
-        "Wholesale_data_for_a_single_node_20251026012003.csv",
-        "Wholesale_data_for_a_single_node_20251026011653.csv",
-        "Wholesale_data_for_a_single_node_20251026011358.csv",
-        "Wholesale_data_for_a_single_node_20251026011258.csv",
-        "Wholesale_data_for_a_single_node_20251026011131.csv",
-        "Wholesale_data_for_a_single_node_20251026011055.csv",
-        "Wholesale_data_for_a_single_node_20251026011001.csv"
+    # --- 1. Define Node Codes and Base URL ---
+    # These are the codes from your screenshot
+    NODE_CODES = [
+        "OTA2201",
+        "WKM2201",
+        "RDF2201",
+        "SFD2201",
+        "HAY2201",
+        "KIK2201",
+        "ISL2201",
+        "BEN2201",
+        "INV2201"
     ]
+    BASE_URL = "https://www.emi.ea.govt.nz/Wholesale/Download/DataReport/CSV/CLA3WR"
+
+    # --- 2. Set Dynamic Date Range ---
+    start_date_str = "20150101"
     
-    # Check if merged file already exists
-    merged_file_path = os.path.join(directory, "merged_highlighted_wholesale_data.csv")
+    # Get today and subtract one day to get yesterday
+    yesterday = date.today() - timedelta(days=1)
+    end_date_str = yesterday.strftime("%Y%m%d")
+
+    st.info(f"Downloading data for {len(NODE_CODES)} nodes from {start_date_str} to {end_date_str}...")
+
+    # --- 3. Download and Process Data ---
+    data_frames = []
     
-    if os.path.exists(merged_file_path):
-        # Load existing merged file
-        st.info(f"Loading cached data from: {merged_file_path}")
-        merged_data = pd.read_csv(merged_file_path)
-    else:
-        # Process and merge individual files
-        st.info("Processing individual wholesale data files...")
-        data_frames = []
-        
-        for file_name in highlighted_files:
-            file_path = os.path.join(directory, file_name)
-            if os.path.exists(file_path):
-                # Skip first 9 rows (metadata), row 9 contains the column headers
-                df = pd.read_csv(file_path, skiprows=9)
-                data_frames.append(df)
-            else:
-                st.warning(f"File not found: {file_name}")
-        
-        if not data_frames:
-            st.error("No data files found! Please check the file paths.")
-            st.stop()
-        
-        # Concatenate all DataFrames
-        merged_data = pd.concat(data_frames, ignore_index=True)
-        
-        # Save merged data for future use
-        merged_data.to_csv(merged_file_path, index=False)
-        st.success(f"Merged data saved to: {merged_file_path}")
+    # Use a session for efficient (faster) downloads
+    with requests.Session() as session:
+        for node_code in NODE_CODES:
+            # Set the query parameters for the URL
+            params = {
+                'DateFrom': start_date_str,
+                'DateTo': end_date_str,
+                'POC': node_code, # This is the dynamic node code
+                '_rsdr': 'W1',
+                '_si': 'v|3'
+            }
+            
+            try:
+                # Make the GET request to download the data
+                response = session.get(BASE_URL, params=params)
+                
+                # Check if the download was successful
+                if response.status_code == 200:
+                    st.write(f"Successfully downloaded data for {node_code}...")
+                    
+                    # Use StringIO to treat the downloaded text (response.text)
+                    # as if it were a file on disk.
+                    # We skip the first 9 rows, just like in your original code.
+                    csv_file_in_memory = StringIO(response.text)
+                    df = pd.read_csv(csv_file_in_memory, skiprows=9)
+                    
+                    # Add the new DataFrame to our list
+                    data_frames.append(df)
+                else:
+                    # Report an error if the download failed for a node
+                    st.warning(f"Failed to download data for {node_code}. Status: {response.status_code}")
+            
+            except requests.RequestException as e:
+                st.error(f"Error during download for {node_code}: {e}")
+
+    # --- 4. Merge and Return Data ---
+    if not data_frames:
+        st.error("No data was successfully downloaded! Please check the network connection or URL.")
+        st.stop()
+    
+    # Concatenate all individual DataFrames into one large DataFrame
+    st.success("All data downloaded. Merging DataFrames...")
+    merged_data = pd.concat(data_frames, ignore_index=True)
+    
+    st.success("Data processing complete!")
+    return merged_data
     
     # Convert Trading date to datetime
     merged_data['Trading date'] = pd.to_datetime(merged_data['Trading date'], dayfirst=True)
