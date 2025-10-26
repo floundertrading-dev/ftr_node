@@ -2,7 +2,9 @@ import os
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
+import requests
+from io import StringIO
 
 # Page configuration
 st.set_page_config(page_title="NZ FTR Node Price Dashboard", layout="wide")
@@ -24,7 +26,6 @@ def load_and_process_data():
         "OTA2201",
         "WKM2201",
         "RDF2201",
-        "SFD2201",
         "HAY2201",
         "KIK2201",
         "ISL2201",
@@ -89,9 +90,6 @@ def load_and_process_data():
     st.success("All data downloaded. Merging DataFrames...")
     merged_data = pd.concat(data_frames, ignore_index=True)
     
-    st.success("Data processing complete!")
-    return merged_data
-    
     # Convert Trading date to datetime
     merged_data['Trading date'] = pd.to_datetime(merged_data['Trading date'], dayfirst=True)
     
@@ -103,6 +101,7 @@ def load_and_process_data():
         .reset_index()
     )
     
+    st.success("Data processing complete!")
     return daily_avg
 
 # Load the data
